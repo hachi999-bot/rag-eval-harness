@@ -155,6 +155,66 @@ Covers normal, abnormal, and boundary cases for `metrics.py`, `stats.py`,
 `runner.py`, and `report.py`, plus an integration test that loads the
 shipped `data/` files end-to-end.
 
+### REST API / Container / AWS deployment example
+
+The same evaluation logic is also reachable over HTTP, so the harness can
+run as a long-lived service instead of only via the CLI. `harness/api.py`
+is a thin FastAPI wrapper: it calls the exact same `load_corpus`,
+`load_eval_set`, `validate_eval_set_against_corpus`, `build_retriever`, and
+`run_eval` functions used by `runner.py` — no evaluation logic is
+duplicated.
+
+**Endpoints**
+
+- `GET /health` — liveness check, returns `{"status": "ok"}`.
+- `POST /evaluate` — runs the fixed eval set and returns per-query and
+  aggregate metrics as JSON. Body: `{"mode": "tfidf", "k": [1, 3, 5]}`
+  (`mode` is one of `naive`, `tfidf`, `openai`; both fields are optional).
+
+```bash
+uv sync --extra api          # installs fastapi + uvicorn alongside the harness
+uv run uvicorn harness.api:app --reload
+
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "tfidf", "k": [1, 3, 5]}'
+```
+
+**Container**
+
+A `Dockerfile` at the repo root builds a non-root container image that
+serves the API on `0.0.0.0:8000`:
+
+```bash
+docker build -t rag-eval-harness .
+docker run --rm -p 8000:8000 rag-eval-harness
+
+curl http://localhost:8000/health
+```
+
+**AWS ECS Fargate deployment example**
+
+`infra/terraform/` is a Terraform **deployment reference architecture** —
+ECR repository, ECS Fargate cluster/task/service, an IAM execution role,
+and a CloudWatch Logs group — meant to show how the container above could
+be run on AWS. It assumes an **existing VPC** (`vpc_id`, `subnet_ids`,
+`security_group_ids` are required input variables) and deliberately does
+not create a VPC, an ALB, or a CI/CD pipeline. It is a configuration
+example only: it has not been applied against a real AWS account as part
+of this repository, and running `terraform apply` against your own account
+is a separate, explicit step with real billing consequences that this
+README does not perform for you.
+
+```bash
+cd infra/terraform
+terraform init
+terraform plan \
+  -var="vpc_id=vpc-xxxxxxxx" \
+  -var='subnet_ids=["subnet-aaaa","subnet-bbbb"]' \
+  -var='security_group_ids=["sg-xxxxxxxx"]'
+```
+
 ### License
 
 No license is granted — see the notice at the end of this file.
@@ -274,6 +334,65 @@ uv run pytest
 `metrics.py`・`stats.py`・`runner.py`・`report.py` それぞれについて正常系・
 異常系・境界値のテストを備え、同梱の `data/` を実際に読み込むエンドツー
 エンドの統合テストも含みます。
+
+### REST API / コンテナ / AWSデプロイ構成例
+
+同じ評価ロジックをHTTP経由でも呼び出せるようにしており、CLIだけでなく
+常駐サービスとしても実行できます。`harness/api.py` は薄いFastAPIラッパー
+で、`runner.py` が使っているのと同じ `load_corpus`・`load_eval_set`・
+`validate_eval_set_against_corpus`・`build_retriever`・`run_eval` を
+そのまま呼び出しており、評価ロジックの複製はありません。
+
+**エンドポイント**
+
+- `GET /health` — 死活確認、`{"status": "ok"}` を返します。
+- `POST /evaluate` — 固定評価セットを実行し、クエリごと・全体集計の指標を
+  JSONで返します。ボディ例: `{"mode": "tfidf", "k": [1, 3, 5]}`
+  (`mode` は `naive`・`tfidf`・`openai` のいずれか。両フィールドとも省略可)
+
+```bash
+uv sync --extra api          # ハーネスに加えて fastapi/uvicorn をインストール
+uv run uvicorn harness.api:app --reload
+
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "tfidf", "k": [1, 3, 5]}'
+```
+
+**コンテナ**
+
+リポジトリ直下の `Dockerfile` は、非rootユーザーでAPIを
+`0.0.0.0:8000` で起動するコンテナイメージをビルドします。
+
+```bash
+docker build -t rag-eval-harness .
+docker run --rm -p 8000:8000 rag-eval-harness
+
+curl http://localhost:8000/health
+```
+
+**AWS ECS Fargate デプロイ構成例**
+
+`infra/terraform/` は、上記コンテナをAWS上でどう動かせるかを示す
+**Terraformによるデプロイ参考構成(reference architecture)** です。
+ECRリポジトリ・ECS Fargateクラスタ/タスク/サービス・IAM実行ロール・
+CloudWatch Logsロググループを含み、**既存のVPC**を前提としています
+(`vpc_id`・`subnet_ids`・`security_group_ids` は必須の入力変数)。
+意図的にVPC自体・ALB・CI/CDパイプラインは作成しません。あくまで構成例
+であり、本リポジトリの一環として実際のAWSアカウントへ適用したもの
+ではありません。`terraform apply` を自身のアカウントに対して実行する
+ことは、実際に課金が発生する別個の明示的な操作であり、本READMEはそれを
+代行するものではありません。
+
+```bash
+cd infra/terraform
+terraform init
+terraform plan \
+  -var="vpc_id=vpc-xxxxxxxx" \
+  -var='subnet_ids=["subnet-aaaa","subnet-bbbb"]' \
+  -var='security_group_ids=["sg-xxxxxxxx"]'
+```
 
 ### ライセンス
 

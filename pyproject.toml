@@ -10,9 +10,15 @@ dependencies = []
 # Optional: enables real embedding calls via the OpenAI API instead of the
 # deterministic offline mock retriever. Not required to run the harness.
 real = ["openai>=1.40.0"]
+# Optional: REST API wrapper (harness.api) exposing the harness over HTTP.
+# Not required to use the harness as a library or CLI.
+api = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
 
 [dependency-groups]
-dev = ["pytest>=8.0.0"]
+# fastapi/uvicorn are duplicated here (also in the `api` extra) so that a
+# plain `uv sync` installs everything needed to run the full test suite,
+# including tests/test_api.py, without requiring --extra api.
+dev = ["pytest>=8.0.0", "httpx>=0.27.0", "fastapi>=0.115.0", "uvicorn[standard]>=0.30.0"]
 
 [build-system]
 requires = ["hatchling"]
